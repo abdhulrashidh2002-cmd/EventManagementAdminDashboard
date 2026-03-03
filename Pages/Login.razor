@@ -1,0 +1,110 @@
+﻿@page "/Login"
+@using Microsoft.AspNetCore.Components
+@using EventManagement.Models
+
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<h3>Login</h3>
+<hr />
+
+@if (showMessage)
+{
+    <div class="alert alert-success">
+        @Message
+    </div>
+}
+
+
+<input @bind="email" class="form-control mb-2" placeholder="Enter Email" />
+<input @bind="password" class="form-control mb-2" type="password" placeholder="Enter password" />
+
+<!-- Login Button -->
+<button class="btn btn-success" @onclick="HandleLogin">Sign In</button>
+
+<!-- Error Message -->
+@if (!string.IsNullOrEmpty(error))
+{
+    <p class="text-danger">@error</p>
+}
+
+<!-- Success Message -->
+@if (!string.IsNullOrEmpty(success))
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @success
+        <button type="button" class="btn-close" @onclick="() => success = null"></button>
+    </div>
+}
+
+@code {
+    private string email = "";
+    private string password = "";
+    private string error = "";
+    private string success = "";
+    private bool showMessage;
+    [Parameter]
+    [SupplyParameterFromQuery]
+    public string? Message { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrEmpty(Message))
+        {
+            showMessage = true;
+
+            await Task.Delay(3000); // 3 seconds
+
+            showMessage = false;
+            StateHasChanged();
+        }
+    }
+    public class AuthResult
+    {
+        public bool Success { get; set; }
+        public string Error { get; set; }
+    }
+
+    private async Task HandleLogin()
+    {
+        // Clear previous messages
+        error = "";
+        success = "";
+
+        try
+        {
+            // Sign in via Firebase JS
+            var result = await JS.InvokeAsync<AuthResult>("firebaseAuth.signIn", email, password);
+
+            if (!result.Success)
+            {
+                error = result.Error;
+                return;
+            }
+
+            // Get current user info from Firebase JS (includes role & name)
+            var user = await JS.InvokeAsync<User>("firebaseAuth.getUser");
+
+            if (user == null)
+            {
+                error = "Failed to fetch user info.";
+                return;
+            }
+
+            // Check role
+            if (user.Role == "admin")
+            {
+                success = "Login Successful!";
+                Nav.NavigateTo("/"); // navigate to admin dashboard
+            }
+            else
+            {
+                error = "Access denied: You are not an Admin.";
+            }
+        }
+        catch (Exception ex)
+        {
+            error = $"Login failed: {ex.Message}";
+        }
+    }
+}

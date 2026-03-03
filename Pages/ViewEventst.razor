@@ -1,0 +1,191 @@
+﻿@using EventManagement.Models
+@page "/ViewEvents"
+@using EventManagement.Services
+@inject AuthService AuthService
+<h3>View Events</h3>
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+
+    <h2>Campus Events</h2>
+    <div class="d-flex justify-content-between aligne-items-center md-4">
+        <button class="btn btn-success" @onclick='() => Nav.NavigateTo("/ManageEvents")'>
+            Add new Event
+        </button>
+    </div>
+
+    <p>Total Events: @events.Count</p>
+
+    @if (isLoading)
+    {
+        <div class="spinner-border" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <div class="spinner-grow" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    }
+    else if (!events.Any())
+    {
+        <div> No Events found.</div>
+    }
+    else
+    {
+        <div class="row">
+            @foreach (var e in events)
+            {
+                <div class="col-md-3 mb-4" >
+                <div class="card h-auto shadow-sm" @onclick="@(() => ShowEvent(e))" style="cursor:pointer;">
+                        <h3>Title :@e.Title</h3>
+                        <img class="card-img-top" src="@e.ImageUrl"
+                             style="height-160px; object-fit; cover;" />
+                        <div class="card-body d-flex flex-column">
+                        
+                            <p>Category :@e.Category</p>
+                            <p>Maximum Students can enroll: @e.Capacity</p>
+                            <span>Date : @e.Date</span>
+                            <p>Venue : @e.Location</p>
+                            <span>Ticket Price: @e.Price</span>
+                            <p>Status :@e.Status</p>
+         
+                            <div class="mt-auto pt-3 border-top">
+                                <button class="btn btn-primary"
+                                        @onclick="() => NavigateToEdit(e.Id)">
+                                    Edit
+                                </button>
+                                <button class="btn btn-secondary"
+                                        @onclick="() => confirmDelete(e.Id)">
+                                    Delete
+                                </button>
+
+                            </div>
+                        </div>
+
+                    </div>
+
+                </div>
+            }
+
+    </div>
+
+    @if (showModal && selectedEvent != null)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">@selectedEvent.Title</h5>
+                        <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <img src="@selectedEvent.ImageUrl" class="img-fluid mb-3" />
+                        <p><b>Category:</b> @selectedEvent.Category</p>
+                        <p><b>Date:</b> @selectedEvent.Date</p>
+                        <p><b>Venue:</b> @selectedEvent.Location</p>
+                        <p><b>Capacity:</b> @selectedEvent.Capacity</p>
+                        <p><b>Price:</b> @selectedEvent.Price</p>
+                        <p><b>Status:</b> @selectedEvent.Status</p>
+                        <p><b>Description:</b> @selectedEvent.Description</p>
+                    </div>
+                    <div class="mt-auto pt-3 border-top">
+                        <button class="btn btn-primary"
+                                @onclick="() => NavigateToEdit(selectedEvent.Id)">
+                            Edit
+                        </button>
+                        <button class="btn btn-secondary"
+                                @onclick="() => confirmDelete(selectedEvent.Id)">
+                            Delete
+                        </button>
+
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-danger" @onclick="CloseModal">Close</button>
+                    </div>
+                </div>
+
+
+            </div>
+        </div>
+    }
+
+
+}
+
+
+@code {
+
+    private EventViewModel? selectedEvent;
+    private bool showModal = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+       
+        var user = await AuthService.GetCurrentUserAsync();
+
+        
+        if (user == null)
+        {
+            Nav.NavigateTo("/Login");
+            return;
+        }
+
+        
+        if (user.Role != "admin")
+        {
+            Nav.NavigateTo("/");
+            return;
+        }
+
+        
+        await LoadData();
+    }
+
+    private List<EventViewModel> events = new();
+    private bool isLoading = true;
+    string message = "";
+
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+
+        try
+        {
+            events = await JS.InvokeAsync<List<EventViewModel>>("firebaseInterop.getEvents");
+        }
+        catch (Exception e)
+        {
+            message = "Error message on fetching events" + e.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void NavigateToEdit(string id) => Nav.NavigateTo($"/ManageEvents/{id}");
+    public class EventViewModel : EventModel {}
+
+    private async Task confirmDelete(String id)
+    {
+        if (await JS.InvokeAsync<bool>("confirm",
+                    "This will permanently remove Event details. Do you want to continue?"))
+        {
+            isLoading = true;
+            await JS.InvokeVoidAsync("firebaseInterop.deleteEvent", id);
+            await LoadData();
+
+        }
+    }
+    private void ShowEvent(EventViewModel e)
+    {
+        selectedEvent = e;
+        showModal = true;
+    }
+    private void CloseModal()
+    {
+        selectedEvent = null;
+        showModal = false;
+    }
+
+}

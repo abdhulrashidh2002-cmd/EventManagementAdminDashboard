@@ -1,0 +1,221 @@
+﻿@page "/ViewRegistrations"
+@using EventManagement.Models
+@using EventManagement.Services
+@inject AuthService AuthService
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+
+<h3>Event RSVPs</h3>
+<hr />
+
+<div class="mb-3">
+    <label class="form-label">Select Event:</label>
+    <select class="form-select" @bind="SelectedEventId">
+        <option value="">-- Select Event --</option>
+        @foreach (var ev in Events)
+        {
+            <option value="@ev.Id">@ev.Title</option>
+        }
+    </select>
+</div>
+
+@if (IsLoading)
+{
+    <div class="d-flex justify-content-center my-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else if (!Rsvps.Any() && !string.IsNullOrEmpty(SelectedEventId))
+{
+    <div class="alert alert-info">No registrations found for this event.</div>
+}
+else if (!string.IsNullOrEmpty(SelectedEventId))
+{
+    <div class="mb-3">
+        <!-- Search by Name -->
+        <div class="col-md-6 mb-2">
+            <label class="form-label">Search by Name:</label>
+            <div class="input-group">
+                <input type="text" class="form-control" placeholder="Enter name..." @bind="SearchTerm" />
+                <button class="btn btn-primary" @onclick="ApplySearch">Search</button>
+                <button class="btn btn-danger" @onclick="ClearSearch">Clear</button>
+            </div>
+        </div>
+
+        <!-- RSVP Cards -->
+        <div class="row mt-3">
+            @foreach (var rsvp in FilteredRsvps)
+            {
+                <div class="col-md-4 col-sm-6 mb-4">
+                    <div class="card shadow-sm h-100 clickable-card" @onclick="() => ShowRsvpDetails(rsvp)">
+                        <div class="card-body">
+                            <h5 class="card-title">@rsvp.FullName</h5>
+                            <p class="card-text mb-1">Tickets: @rsvp.Guests</p>
+                            <p class="card-text mb-1">Total: @rsvp.Total</p>
+                            <p class="card-text text-muted">Method: @rsvp.PaymentMethod</p>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+
+<!-- to show full details of the registration-->
+@if (IsModalVisible && SelectedRsvp != null)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">RSVP Details</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p><b>Full Name:</b> @SelectedRsvp.FullName</p>
+                    <p><b>Email:</b> @SelectedRsvp.Email</p>
+                    <p><b>Transaction ID:</b> @SelectedRsvp.TransactionId</p>
+                    <p><b>Tickets:</b> @SelectedRsvp.Guests</p>
+                    <p><b>Total:</b> @SelectedRsvp.Total</p>
+                    <p><b>Payment Method:</b> @SelectedRsvp.PaymentMethod</p>
+                    <p><b>Registered At:</b> @SelectedRsvp.RegisteredAt?.ToString("dd MMM yyyy HH:mm")</p>
+                    <p><b>User ID:</b> @SelectedRsvp.UserId</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        var user = await AuthService.GetCurrentUserAsync();
+
+
+        if (user == null)
+        {
+            Nav.NavigateTo("/Login");
+            return;
+        }
+
+
+        if (user.Role != "admin")
+        {
+            Nav.NavigateTo("/");
+            return;
+        }
+
+        await LoadEventsAsync();
+
+    }
+    
+
+    private List<EventModel> Events = new();
+    private List<Rsvp> Rsvps = new();
+    private List<Rsvp> FilteredRsvps = new();
+
+    private string SearchTerm = "";
+    private bool IsModalVisible = false;
+    private Rsvp SelectedRsvp;
+    private string _selectedEventId = "";
+    private string SelectedEventId
+    {
+        get => _selectedEventId;
+        set
+        {
+            if (_selectedEventId != value)
+            {
+                _selectedEventId = value;
+                _ = LoadRsvpsAsync();
+            }
+        }
+    }
+
+
+    private bool IsLoading = true;
+
+    
+
+    private async Task LoadEventsAsync()
+    {
+        try
+        {
+            IsLoading = true;
+            Events = await JS.InvokeAsync<List<EventModel>>("firebaseInterop.getEvents");
+        }
+        catch
+        {
+            Events = new List<EventModel>();
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task LoadRsvpsAsync()
+    {
+        if (string.IsNullOrEmpty(SelectedEventId))
+        {
+            Rsvps.Clear();
+            return;
+        }
+
+        IsLoading = true;
+        try
+        {
+            Rsvps = await JS.InvokeAsync<List<Rsvp>>(
+                "firebaseInterop.getRsvps", SelectedEventId) ?? new List<Rsvp>();
+            FilteredRsvps = Rsvps.ToList();
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowRsvpDetails(Rsvp rsvp)
+    {
+        SelectedRsvp = rsvp;
+        IsModalVisible = true;
+    }
+
+    private void CloseModal()
+    {
+        SelectedRsvp = null;
+        IsModalVisible = false;
+    }
+
+    
+    private void ApplySearch()
+    {
+        if (string.IsNullOrWhiteSpace(SearchTerm))
+        {
+            FilteredRsvps = Rsvps.ToList();
+        }
+        else
+        {
+            FilteredRsvps = Rsvps
+                .Where(r => r.FullName?.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) == true)
+                .ToList();
+        }
+    }
+
+    private void ClearSearch()
+    {
+        SearchTerm = "";
+        FilteredRsvps = Rsvps.ToList();
+    }
+
+
+}

@@ -1,0 +1,75 @@
+﻿@page "/CreateAdmin"
+@inject IJSRuntime JS
+@using Microsoft.AspNetCore.Components.Forms
+@inject NavigationManager Nav
+
+<h3>User Registration</h3>
+
+<EditForm Model="newUser" OnValidSubmit="HandleRegistration">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+    <div class="mb-3">
+        <label>Name</label>
+        <InputText class="form-control" @bind-Value="newUser.Name" />
+    </div>
+
+    <div class="mb-3">
+        <label>Email</label>
+        <InputText class="form-control" @bind-Value="newUser.Email" />
+    </div>
+
+    <div class="mb-3">
+        <label>Password</label>
+        <InputText class="form-control" type="password" @bind-Value="newUser.Password" />
+    </div>
+
+    <button class="btn btn-primary">Register</button>
+    <button class="btn btn-danger" @onclick='() => Nav.NavigateTo("/")'>Back</button>
+
+</EditForm>
+
+@if (!string.IsNullOrEmpty(message))
+{
+    <div class="mt-2 alert alert-info">@message</div>
+}
+
+@code {
+    private UserRegistrationModel newUser = new();
+    private string message = "";
+
+    public class UserRegistrationModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string Username { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+    }
+
+    private async Task HandleRegistration()
+    {
+        message = "Registering...";
+        var result = await JS.InvokeAsync<RegistrationResult>(
+            "firebaseInterop.registerUser",
+            newUser.Email, newUser.Password, newUser.Name
+        );
+
+        if (result.success)
+        {
+            message = "User registered successfully!";
+            newUser = new UserRegistrationModel();
+            Nav.NavigateTo("/");
+        }
+        else
+        {
+            message = $"Error: {result.message}";
+
+        }
+    }
+
+    public class RegistrationResult
+    {
+        public bool success { get; set; }
+        public string userId { get; set; } = "";
+        public string message { get; set; } = "";
+    }
+}

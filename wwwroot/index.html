@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EventManagement</title>
+    <base href="/" />
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link href="EventManagement.styles.css" rel="stylesheet" />
+    <link href="manifest.webmanifest" rel="manifest" />
+    <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+
+    <!-- Firebase and interop JS -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import {
+            getFirestore,
+            collection,
+            addDoc,
+            doc,
+            setDoc,
+            getDocs,
+            getDoc,
+            deleteDoc
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        import { getStorage } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
+        import {createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        // Firebase config
+        const firebaseConfig = {
+            apiKey: "AIzaSyBXD-Nkq6qkjCB6i03bSWpnK_K2P5RPWM8",
+            authDomain: "eventmanagementdb-1f90b.firebaseapp.com",
+            projectId: "eventmanagementdb-1f90b",
+            storageBucket: "eventmanagementdb-1f90b.appspot.com", // fixed
+            messagingSenderId: "753610326935",
+            appId: "1:753610326935:web:59c96629104d954efe3ad2"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+        const auth = getAuth(app);
+
+        // Firebase Auth Wrapper
+        window.firebaseAuth = {
+            signIn: async (email, password) => {
+                try {
+                    const userInfo = await signInWithEmailAndPassword(auth, email, password);
+                    return { success: true, email: userInfo.user.email };
+                } catch (e) {
+                    return { success: false, error: e.message };
+                }
+            },
+            logout: async () => {
+                await signOut(auth);
+            },
+            getUser: async () => {
+                const user = auth.currentUser;
+                if (!user) return null;
+
+                try {
+                    
+                    const docRef = doc(db, "users", user.uid);
+                    const docSnap = await getDoc(docRef);
+                    const userData = docSnap.exists() ? docSnap.data() : {};
+
+                    return {
+                        uid: user.uid,  
+                        email: user.email,    
+                        role: userData.role || null,  
+                        name: userData.name || null    
+                    };
+                } catch (e) {
+                    console.error("getUser error:", e);
+                    return {
+                        uid: user.uid,
+                        email: user.email,
+                        role: null,
+                        name: null
+                    };
+                }
+            },
+            getUserRole: async (uid) => {
+                try {
+                    const docRef = doc(db, "users", uid);
+                    const docSnap = await getDoc(docRef);
+                    return docSnap.exists() ? docSnap.data().role : null;
+                } catch (e) {
+                    console.error("getUserRole error:", e);
+                    return null;
+                }
+            }
+        };
+
+        // Firebase Interop
+        window.firebaseInterop = window.firebaseInterop || {};
+
+            window.firebaseInterop = {
+                registerUser: async (email, password,name) => {
+                    try {
+            
+                        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                        const userId = userCredential.user.uid;
+
+                        await setDoc(doc(db, "users", userId), {
+                            userId: userId,
+                            email:email,
+                            name:name,
+                            role: "admin"
+                        });
+
+                        return { success: true, userId: userId };
+                    } catch (error) {
+                        return { success: false, message: error.message };
+                    }
+                }
+            };
+
+      window.firebaseInterop.SaveEvent = async (event) => {
+        try {
+          
+            const docRef = doc(collection(db, "event"));
+       
+            event.id = docRef.id;
+            await setDoc(docRef, event);
+            return { success: true, id: docRef.id };
+        } catch (e) {
+            console.error("SaveEvent error:", e);
+            return { success: false, error: e.message };
+        }
+    };
+
+        window.firebaseInterop.UpdateEvent = async (id, event) => {
+            try {
+                const docRef = doc(db, "event", id);
+                await setDoc(docRef, event);
+                return { success: true };
+            } catch (e) {
+                console.error("UpdateEvent error:", e);
+                return { success: false, error: e.message };
+            }
+        };
+
+        window.firebaseInterop.getEvents = async () => {
+            const querySnap = await getDocs(collection(db, "event"));
+            return querySnap.docs.map(doc => ({ Id: doc.id, ...doc.data() }));
+        };
+
+        window.firebaseInterop.deleteEvent = async (id) => {
+            try {
+                await deleteDoc(doc(db, "event", id));
+                return { success: true };
+            } catch (e) {
+                return { success: false, error: e.message };
+            }
+        };
+
+        window.firebaseInterop.getEventById = async (id) => {
+            const docRef = doc(db, "event", id);
+            const docSnap = await getDoc(docRef);
+            return docSnap.exists() ? { Id: docSnap.id, ...docSnap.data() } : null;
+        };
+
+        // Feedback management
+        window.firebaseInterop.getFeedbacks = async (eventId) => {
+            try {
+                const snapshot = await getDocs(
+                    collection(db, `event/${eventId}/feedback`)
+                );
+
+                return snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        id: doc.id,
+                        ...data,
+                        date: data.date ? data.date.toDate() : null
+                    };
+                });
+
+
+
+    } catch (e) {
+        console.error("getFeedbacks error:", e);
+        return [];
+    }
+};
+
+        window.firebaseInterop.SaveFeedback = async (eventId, feedback) => {
+            try {
+                const docRef = await addDoc(collection(db, `event/${eventId}/feedback`), feedback);
+                return { success: true, id: docRef.id };
+            } catch (e) {
+                return { success: false, error: e.message };
+            }
+        };
+
+        window.firebaseInterop.getRsvps = async (eventId) => {
+            try {
+                const rsvpsRef = collection(db, "event", eventId, "rsvps");
+                const querySnapshot = await getDocs(rsvpsRef);
+                return querySnapshot.docs.map(doc => ({ ...doc.data(), Id: doc.id }));
+            } catch (e) {
+                console.error("getRsvps error:", e);
+                return [];
+            }
+        };
+
+        
+   
+    </script>
+
+</head>
+
+<body>
+    <div id="app">
+        <!-- Fixed SVG -->
+        <svg class="loading-progress" viewBox="0 0 100 100">
+            <circle r="40" cx="50" cy="50" />
+            <circle r="40" cx="50" cy="50" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">🗙</span>
+    </div>
+
+    <!-- Blazor WebAssembly -->
+    <script src="_framework/blazor.webassembly.js"></script>
+
+    <!-- Optional: Service Worker -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' })
+                .catch(err => console.warn("ServiceWorker registration failed:", err));
+        }
+    </script>
+</body>
+
+</html>
